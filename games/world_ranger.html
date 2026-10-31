@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Рейнджър в Масаи Мара</title>
+<style>
+:root{--bg:#f4f1e8;--card:#fff;--tx:#23301f;--mut:#667060;--ac:#3f7d3a;--bd:#d8d3c2;--bad:#c0452f;--on:#fff;color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171c15;--card:#222a1f;--tx:#e9eee3;--mut:#9aa693;--ac:#7cc46e;--bd:#38422f;--bad:#e8765f;--on:#10200c;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#171c15;--card:#222a1f;--tx:#e9eee3;--mut:#9aa693;--ac:#7cc46e;--bd:#38422f;--bad:#e8765f;--on:#10200c;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.45;font-size:16px}
+main{max-width:720px;margin:0 auto;padding:12px}
+h1{font-size:1.4rem;margin:.2em 0}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin:10px 0}
+.btn{background:var(--ac);color:var(--on);border:0;border-radius:10px;padding:14px 24px;font-size:1.15rem;cursor:pointer}
+canvas{width:100%;height:auto;display:block;border-radius:10px;border:1px solid var(--bd);touch-action:none}
+.hud{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:1rem;margin:8px 0}
+.track{flex:1;min-width:120px;height:16px;background:var(--bd);border-radius:6px;overflow:hidden}
+#fill{height:100%;width:50%;background:var(--ac)}
+#msg{min-height:3em;color:var(--tx);font-size:1rem}
+.pad{display:grid;grid-template-columns:repeat(3,80px);grid-template-rows:repeat(2,64px);gap:6px;justify-content:center;margin:8px 0}
+.pad button{font-size:1.7rem;background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:10px;touch-action:none;user-select:none}
+.hide{display:none}.ok{color:var(--ac)}.no{color:var(--bad)}
+</style>
+</head>
+<body>
+<main>
+<h1>🦓 Рейнджър: 3 нива по света</h1>
+
+<section id="intro" class="card">
+<p>Ти си рейнджър на границата между пасищата и парка Серенгети – Масаи Мара. Както в историята, добитъкът навлиза в парка, блокира миграцията на зебри и гну, а свръхпашата оголва земята. Играта има <b>3 кратки нива по 30 секунди</b> в различни региони: Африка, Амазония и България.</p>
+<p>🎮 <b>Стрелки / WASD</b> (или бутоните на телефон):<br>
+🐄 Приближи се до добитъка и го <b>пъдиш</b> обратно към пасищата.<br>
+🌱 Засаждай дървета върху <b>оголена земя</b> (каявите квадрати): <b>докосни</b> квадрата или <b>стъпи</b> върху него – агролесовъдство.<br>
+🦓 Не позволявай на добитъка да блокира коридора на мигриращите животни.</p>
+<button class="btn" id="go">Старт ▶</button>
+</section>
+
+<section id="game" class="hide">
+<div id="lv" style="font-weight:600;font-size:1.05rem"></div>
+<div class="hud"><span>🌿 Биоразнообразие</span><div class="track"><div id="fill"></div></div><b id="bio"></b><span>⏱️ <b id="time"></b></span><span id="carry"></span></div>
+<canvas id="c" width="640" height="400"></canvas>
+<div id="msg"></div>
+<div class="pad">
+ <span></span><button data-k="up">▲</button><span></span>
+ <button data-k="left">◀</button><button data-k="down">▼</button><button data-k="right">▶</button>
+</div>
+</section>
+
+<section id="end" class="card hide"></section>
+</main>
+
+<script>
+const $=id=>document.getElementById(id),cv=$("c"),g=cv.getContext("2d");
+const W=640,H=400,T=40,C=16,Rw=10;let PARK=440,lvl=0,res=[];
+let t,cows,zeb,ranger,bio,left,carry,keys={},run=false,last,spawn,msgT,stats,lastMsg={};
+const LV=[
+{loc:"Африка: Масаи Мара",cow:"🐄",mig:"🦓",park:440,bare:4,cnt:6,degr:.05,drift:28,pd:.5,zs:70,goal:58,pa:"#8bc06a",pk:"#5f9a4e",bc:"#b08a5a",pl:"ПАРК",al:"ПАСИЩА",start:"Ниво 1: прогони добитъка и засаждай дървета!",parkMsg:"⚠️ Стадо навлезе в парка! Добитъкът блокира миграцията и пренася заразни болести (шап).",blk:"🦓 Добитъкът блокира миграционния коридор!",fact:"В Серенгети – Масаи Мара добитъкът блокира коридорите на над 1,5 млн. диви тревопасни. Решения: агролесовъдство, ротационна паша, буферни зони."},
+{loc:"Южна Америка: Амазония",cow:"🐄",mig:"🐆",park:400,bare:5,cnt:8,degr:.07,drift:36,pd:.7,zs:75,goal:60,pa:"#a3c46b",pk:"#2f7d3f",bc:"#a06b45",pl:"ГОРА",al:"ПАСИЩА",start:"Ниво 2: пази джунглата от нови пасища!",parkMsg:"🔥 Стадо навлезе в гората! Пасищата заместват джунглата и унищожават местообитания.",blk:"🐆 Стадата прекъсват пътя на дивите животни!",fact:"Свръхскотовъдството е главната причина за обезлесяване на Амазония. Решения: сателитно следене и глоби, сертификация на месото, плащания за запазване на гората."},
+{loc:"България: Маджарово",cow:"🐑",mig:"🐺",park:420,bare:3,cnt:7,degr:.06,drift:32,pd:.6,zs:70,goal:60,pred:1,eat:"🐑 Вълк изяде овца! Така се стига до ответни отровни примамки и бракониерство.",pa:"#b7c47a",pk:"#6b8f5a",bc:"#a89070",pl:"НАТУРА 2000",al:"ПАСИЩА",start:"Ниво 3: вълците се връщат! Отдалечи овцете от тях, за да няма ответно отравяне.",parkMsg:"⚠️ Овце навлязоха в защитената зона! Броят на животните трябва да съответства на площта.",blk:"🐺 Вълк край стадото! Отдалечи овцете от него, преди да са нападнати.",fact:"В Маджарово сезонната паша, пастирските кучета, електрическите огради и постоянната охрана на стадата позволяват съжителство с възвръщащите се хищници, без да се стига до пълното им унищожение. Помагат и организации като БДЗП."}
+];
+const rnd=(a,b)=>a+Math.random()*(b-a);
+addEventListener("keydown",e=>{const k=({ArrowUp:"up",w:"up",W:"up",ArrowDown:"down",s:"down",S:"down",ArrowLeft:"left",a:"left",A:"left",ArrowRight:"right",d:"right",D:"right"})[e.key];if(k){keys[k]=1;e.preventDefault()}});
+addEventListener("keyup",e=>{const k=({ArrowUp:"up",w:"up",W:"up",ArrowDown:"down",s:"down",S:"down",ArrowLeft:"left",a:"left",A:"left",ArrowRight:"right",d:"right",D:"right"})[e.key];if(k)keys[k]=0});
+document.querySelectorAll(".pad button").forEach(b=>{const k=b.dataset.k;b.addEventListener("pointerdown",e=>{keys[k]=1;e.preventDefault()});["pointerup","pointerleave","pointercancel"].forEach(ev=>b.addEventListener(ev,()=>keys[k]=0))});
+$("go").onclick=()=>{res=[];lvl=0;startLevel()};
+cv.addEventListener("pointerdown",e=>{if(!run)return;const b=cv.getBoundingClientRect(),c=Math.floor((e.clientX-b.left)*W/b.width/T),r=Math.floor((e.clientY-b.top)*H/b.height/T);if(t[r]&&t[r][c]===1)plant(r,c)});
+function plant(r,c){t[r][c]=2;stats.planted++;msg("🌳 Засади дърво! Агролесовъдството пази почвата от ерозия.","plant")}
+
+function msg(s,key){const n=performance.now();if(key&&lastMsg[key]&&n-lastMsg[key]<8000)return;if(key)lastMsg[key]=n;$("msg").textContent=s}
+function startLevel(){const L=LV[lvl];PARK=L.park;$("lv").textContent="Ниво "+(lvl+1)+"/3: "+L.loc;
+ t=[];for(let r=0;r<Rw;r++){t.push([]);for(let c=0;c<C;c++)t[r].push(0)}
+ for(let k=0;k<L.bare;k++){const r=Math.floor(rnd(1,Rw)),c=Math.floor(rnd(1,10));t[r][c]=1}
+ cows=[];for(let k=0;k<L.cnt;k++)cows.push({x:rnd(100,380),y:rnd(40,370),vx:rnd(-20,20),vy:rnd(-20,20),tm:0});
+ zeb=[];ranger={x:60,y:200};bio=55;left=30;carry=false;spawn=1.5;stats={planted:0,herded:0,crossed:0};lastMsg={};
+ $("intro").classList.add("hide");$("end").classList.add("hide");$("game").classList.remove("hide");
+ msg(L.start);
+ run=true;last=performance.now();requestAnimationFrame(loop);
+}
+function loop(n){
+ if(!run)return;
+ const dt=Math.min(.05,(n-last)/1000);last=n;update(dt);draw();
+ if(left<=0)return end();
+ requestAnimationFrame(loop);
+}
+function update(dt){const L=LV[lvl];
+ left-=dt;
+ // ranger
+ const sp=140;let dx=(keys.right?1:0)-(keys.left?1:0),dy=(keys.down?1:0)-(keys.up?1:0);
+ if(dx&&dy){dx*=.7;dy*=.7}
+ ranger.x=Math.max(10,Math.min(W-10,ranger.x+dx*sp*dt));ranger.y=Math.max(10,Math.min(H-10,ranger.y+dy*sp*dt));
+ if(0){carry=true;msg("🌱 Взе фиданка. Намери оголена (кафява) земя.")}
+ const tc=Math.floor(ranger.x/T),tr=Math.floor(ranger.y/T);
+ if(t[tr]&&t[tr][tc]===1){plant(tr,tc)}if(0){msg("🌳 Засади дърво! Агролесовъдството пази почвата от ерозия.","plant")}
+ // cows
+ let inPark=0;
+ cows.forEach(c=>{
+  c.tm-=dt;if(c.tm<=0){c.vx=rnd(-18,L.drift);c.vy=rnd(-18,18);c.tm=rnd(1,2.5)}
+  const rx=c.x-ranger.x,ry=c.y-ranger.y,d=Math.hypot(rx,ry);
+  if(d<60){c.vx=rx/d*120;c.vy=ry/d*120}
+  if(L.pred)zeb.forEach(z=>{const wx=c.x-z.x,wy=c.y-z.y,wd=Math.hypot(wx,wy);if(wd<80&&wd>0){c.vx=wx/wd*90;c.vy=wy/wd*90}});
+  const wasP=c.x>=PARK;
+  c.x=Math.max(10,Math.min(W-10,c.x+c.vx*dt));c.y=Math.max(15,Math.min(H-10,c.y+c.vy*dt));
+  if(d<60&&c.x<PARK&&Math.random()<dt*2)stats.herded+=0; 
+  if(c.x>=PARK){inPark++;if(!wasP)msg(L.parkMsg,"park")}
+  const cc=Math.floor(c.x/T),cr=Math.floor(c.y/T);
+  if(c.x<PARK&&t[cr]&&t[cr][cc]===0&&Math.random()<dt*L.degr){t[cr][cc]=1;msg("🟫 Свръхпаша: тревата е изяла до корен, почвата е оголена и ерозира.","bare")}
+ });
+ // zebras
+ spawn-=dt;if(spawn<=0){zeb.push({x:0,y:rnd(30,380),st:0});spawn=rnd(2.5,3.5)}
+ let stuck=0;
+ zeb=zeb.filter(z=>{
+  if(L.pred){const i=cows.findIndex(c=>Math.hypot(c.x-z.x,c.y-z.y)<28);if(i>=0){cows.splice(i,1);bio=Math.max(0,bio-4);msg(L.eat,"eat")}else if(cows.some(c=>Math.hypot(c.x-z.x,c.y-z.y)<90))msg(L.blk,"block")}
+  const blk=!L.pred&&cows.some(c=>c.x>z.x&&c.x-z.x<34&&Math.abs(c.y-z.y)<24);
+  if(blk){z.st+=dt;if(z.st>1.5)stuck++;if(z.st>1.5)z.y+=(Math.sin(z.y)>0?1:-1)*20*dt}else{z.st=0;z.x+=L.zs*dt}
+  if(z.x>=W){bio=Math.min(100,bio+3);stats.crossed++;return false}
+  return true;
+ });
+ if(stuck)msg(L.blk,"block");
+ let bare=0,trees=0;t.forEach(r=>r.forEach(v=>{if(v===1)bare++;if(v===2)trees++}));
+ bio+=(-0.05*bare-L.pd*inPark-0.4*stuck+0.04*trees)*dt;
+ bio=Math.max(0,Math.min(100,bio));
+ $("bio").textContent=Math.round(bio)+"%";$("fill").style.width=bio+"%";$("fill").style.background=bio<35?"var(--bad)":"var(--ac)";
+ $("time").textContent=Math.ceil(left)+"s";$("carry").textContent=carry?"🌱 носиш фиданка":"";
+ if(bio<=0)left=0;
+}
+function em(s,x,y,z){g.font=Math.round((z||26)*1.7)+"px serif";g.textAlign="center";g.textBaseline="middle";g.fillText(s,x,y)}
+function draw(){const L=LV[lvl];
+ for(let r=0;r<Rw;r++)for(let c=0;c<C;c++){
+  const v=t[r][c],park=c*T>=PARK;
+  g.fillStyle=v===1?L.bc:park?L.pk:L.pa;
+  if(v===2)g.fillStyle="#6fae55";
+  g.fillRect(c*T,r*T,T,T);
+  g.strokeStyle="rgba(0,0,0,.05)";g.strokeRect(c*T,r*T,T,T);
+  if(v===2)em("🌳",c*T+20,r*T+20,24);if(v===1)em("🌱",c*T+20,r*T+20,18);
+ }
+ g.strokeStyle="#fff";g.setLineDash([6,5]);g.lineWidth=2;g.beginPath();g.moveTo(PARK,0);g.lineTo(PARK,H);g.stroke();g.setLineDash([]);
+ g.fillStyle="rgba(255,255,255,.9)";g.font="bold 28px system-ui";g.textAlign="center";
+ g.lineWidth=5;g.lineJoin="round";g.strokeStyle="rgba(0,0,0,.4)";[[L.pl,(PARK+W)/2],[L.al,PARK/2]].forEach(a=>{g.strokeText(a[0],a[1],20);g.fillText(a[0],a[1],20)});
+ g.fillStyle="#fff";g.font="10px system-ui";
+ zeb.forEach(z=>{em(L.mig,z.x,z.y,24);if(z.st>1.5)em("❗",z.x,z.y-26,14)});
+ cows.forEach(c=>em(L.cow,c.x,c.y,26));
+ em("🧑‍🌾",ranger.x,ranger.y,28);if(carry)em("🌱",ranger.x+14,ranger.y-14,16);
+}
+function end(){
+ res.push({b:Math.round(bio),p:stats.planted,c:stats.crossed,w:bio>=LV[lvl].goal});
+ if(lvl<2)return levelEnd();
+ finalEnd();
+}
+function levelEnd(){
+ run=false;$("game").classList.add("hide");$("end").classList.remove("hide");
+ const r=res[lvl],L=LV[lvl];
+ $("end").innerHTML="<h2>"+(r.w?"✅":"❌")+" Ниво "+(lvl+1)+": "+L.loc+"</h2><p>Биоразнообразие: <b class='"+(r.w?"ok":"no")+"'>"+r.b+"%</b> (цел "+L.goal+"%) · 🌳 "+r.p+" · "+L.mig+" "+r.c+"</p><p>"+L.fact+"</p><button class='btn' id='nx'>Следващо ниво ▶</button>";
+ $("nx").onclick=()=>{lvl++;startLevel()};
+}
+function finalEnd(){
+ run=false;$("game").classList.add("hide");$("end").classList.remove("hide");
+ const wins=res.filter(r=>r.w).length,win=wins>=2;
+ $("end").innerHTML="<h2>"+(wins==3?"🏆 Перфектно: 3/3 нива!":win?"🌿 Добър рейнджър: "+wins+"/3 нива":"🌱 Опитай пак: "+wins+"/3 нива")+"</h2>"+
+ "<p>"+res.map((r,k)=>(r.w?"✅ ":"❌ ")+LV[k].loc+": "+r.b+"% (🌳 "+r.p+")").join("<br>")+"</p>"+
+ "<p><b>Какво показва играта (от историята):</b><br>• Добитък в парка блокира миграцията на над 1,5 млн. диви тревопасни и пренася болести.<br>• Свръхпашата оголва почвата и води до ерозия и опустиняване.<br>• Агролесовъдство, планирана паша и защита на коридорите възстановяват земята, без да се спира животновъдството.</p>"+
+ "<button class='btn' id='again'>Играй отново</button>";
+ $("again").onclick=()=>{res=[];lvl=0;startLevel()};
+}
+</script>
+</body>
+</html>
